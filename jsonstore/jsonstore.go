@@ -22,6 +22,7 @@ import (
 var _ types.Application = (*JSONStoreApplication)(nil)
 var db *mgo.Database
 
+// Post ...
 type Post struct {
 	ID          bson.ObjectId `bson:"_id" json:"_id"`
 	Title       string        `bson:"title" json:"title"`
@@ -36,6 +37,7 @@ type Post struct {
 	ShowHN      bool          `bson:"showHN" json:"showHN"`
 }
 
+// Comment ...
 type Comment struct {
 	ID              bson.ObjectId `bson:"_id" json:"_id"`
 	Content         string        `bson:"content" json:"content"`
@@ -47,6 +49,7 @@ type Comment struct {
 	ParentCommentID bson.ObjectId `bson:"parentCommentId,omitempty" json:"parentCommentId"`
 }
 
+// User ...
 type User struct {
 	ID        bson.ObjectId `bson:"_id" json:"_id"`
 	Name      string        `bson:"name" json:"name"`
@@ -54,18 +57,21 @@ type User struct {
 	PublicKey string        `bson:"publicKey" json:"publicKey"`
 }
 
+// UserPostVote ...
 type UserPostVote struct {
 	ID     bson.ObjectId `bson:"_id" json:"_id"`
 	UserID bson.ObjectId `bson:"userID" json:"userID"`
 	PostID bson.ObjectId `bson:"postID" json:"postID"`
 }
 
+// UserCommentVote ...
 type UserCommentVote struct {
 	ID        bson.ObjectId `bson:"_id" json:"_id"`
 	UserID    bson.ObjectId `bson:"userID" json:"userID"`
 	CommentID bson.ObjectId `bson:"commentID" json:"commentID"`
 }
 
+// DBStats ...
 type DBStats struct {
 	Collections int     `bson:"collections"`
 	Objects     int64   `bson:"objects"`
@@ -76,6 +82,7 @@ type DBStats struct {
 	IndexSize   float64 `bson:"indexSize"`
 }
 
+// JSONStoreApplication ...
 type JSONStoreApplication struct {
 	types.BaseApplication
 }
@@ -94,21 +101,24 @@ func hotScore(votes int, date time.Time) float64 {
 	return float64(votes-1) / math.Pow(hoursAge+2, gravity)
 }
 
+// FindTimeFromObjectID ... Convert ObjectID string to Time
 func FindTimeFromObjectID(id string) time.Time {
 	ts, _ := strconv.ParseInt(id[0:8], 16, 64)
 	return time.Unix(ts, 0)
 }
 
+// NewJSONStoreApplication ...
 func NewJSONStoreApplication(dbCopy *mgo.Database) *JSONStoreApplication {
 	db = dbCopy
 	return &JSONStoreApplication{}
 }
 
+// Info ...
 func (app *JSONStoreApplication) Info(req types.RequestInfo) (resInfo types.ResponseInfo) {
 	return types.ResponseInfo{Data: fmt.Sprintf("{\"size\":%v}", 0)}
 }
 
-// tx is JSON
+// DeliverTx ... Update the global state
 func (app *JSONStoreApplication) DeliverTx(tx []byte) types.ResponseDeliverTx {
 
 	var temp interface{}
@@ -330,6 +340,7 @@ func (app *JSONStoreApplication) DeliverTx(tx []byte) types.ResponseDeliverTx {
 	return types.ResponseDeliverTx{Code: code.CodeTypeOK, Tags: nil}
 }
 
+// CheckTx ... Verify the transaction
 func (app *JSONStoreApplication) CheckTx(tx []byte) types.ResponseCheckTx {
 	var temp interface{}
 	err := json.Unmarshal(tx, &temp)
@@ -353,6 +364,7 @@ func (app *JSONStoreApplication) CheckTx(tx []byte) types.ResponseCheckTx {
 	return types.ResponseCheckTx{Code: code.CodeTypeOK}
 }
 
+// Commit ...Commit the block. Calculate the appHash
 func (app *JSONStoreApplication) Commit() types.ResponseCommit {
 	appHash := make([]byte, 8)
 
@@ -366,26 +378,7 @@ func (app *JSONStoreApplication) Commit() types.ResponseCommit {
 	return types.ResponseCommit{Data: appHash}
 }
 
+// Query ... Query the blockchain. Unimplemented as of now.
 func (app *JSONStoreApplication) Query(reqQuery types.RequestQuery) (resQuery types.ResponseQuery) {
-	if reqQuery.Prove {
-		//value := app.state.db.Get(prefixKey(reqQuery.Data))
-		resQuery.Index = -1 // TODO make Proof return index
-		resQuery.Key = reqQuery.Data
-		//resQuery.Value = value
-		// if value != nil {
-		// 	resQuery.Log = "exists"
-		// } else {
-		// 	resQuery.Log = "does not exist"
-		// }
-		return
-	} else {
-		//value := app.state.db.Get(prefixKey(reqQuery.Data))
-		//resQuery.Value = value
-		// if value != nil {
-		// 	resQuery.Log = "exists"
-		// } else {
-		// 	resQuery.Log = "does not exist"
-		// }
-		return
-	}
+	return
 }

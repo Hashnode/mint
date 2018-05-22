@@ -12,7 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tendermint/abci/example/code"
+	"mint/code"
+
 	"github.com/tendermint/abci/types"
 	"golang.org/x/crypto/ed25519"
 	mgo "gopkg.in/mgo.v2"
@@ -367,7 +368,7 @@ func (app *JSONStoreApplication) CheckTx(tx []byte) types.ResponseCheckTx {
 	isCorrect := ed25519.Verify(pubKeyBytes, messageBytes, sigBytes)
 
 	if isCorrect != true {
-		return types.ResponseCheckTx{Code: code.CodeTypeUnauthorized}
+		return types.ResponseCheckTx{Code: code.CodeTypeBadSignature}
 	}
 
 	return types.ResponseCheckTx{Code: code.CodeTypeOK}

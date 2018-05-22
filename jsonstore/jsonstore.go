@@ -265,6 +265,8 @@ func (app *JSONStoreApplication) DeliverTx(tx []byte) types.ResponseDeliverTx {
 		comment.Content = entity["content"].(string)
 		comment.Date = FindTimeFromObjectID(comment.ID.Hex())
 		comment.PostID = bson.ObjectIdHex(entity["postId"].(string))
+		comment.Upvotes = 1
+		comment.Score = hotScore(comment.Upvotes, comment.Date)
 
 		if entity["parentCommentId"] != nil {
 			comment.ParentCommentID = bson.ObjectIdHex(entity["parentCommentId"].(string))
@@ -291,6 +293,13 @@ func (app *JSONStoreApplication) DeliverTx(tx []byte) types.ResponseDeliverTx {
 			panic(dbErr)
 		}
 
+		// For recording default upvote
+		var document UserCommentVote
+		document.ID = bson.NewObjectId()
+		document.UserID = user.ID
+		document.CommentID = comment.ID
+
+		db.C("usercommentvotes").Insert(document)
 		db.C("posts").Update(bson.M{"_id": comment.PostID}, bson.M{"$inc": bson.M{"numComments": 1}})
 
 		break

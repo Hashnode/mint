@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -207,7 +209,16 @@ func (app *JSONStoreApplication) DeliverTx(tx []byte) types.ResponseDeliverTx {
 		user.ID = bson.ObjectIdHex(entity["id"].(string))
 		user.Username = entity["username"].(string)
 		user.Name = entity["name"].(string)
-		user.PublicKey = entity["publicKey"].(string)
+
+		pubKeyBytes, errDecode := base64.StdEncoding.DecodeString(message["publicKey"].(string))
+
+		if errDecode != nil {
+			panic(errDecode)
+		}
+
+		publicKey := strings.ToUpper(byteToHex(pubKeyBytes))
+
+		user.PublicKey = publicKey
 
 		dbErr := db.C("users").Insert(user)
 
@@ -219,7 +230,21 @@ func (app *JSONStoreApplication) DeliverTx(tx []byte) types.ResponseDeliverTx {
 	case "upvotePost":
 		entity := body["entity"].(map[string]interface{})
 
-		userID := bson.ObjectIdHex(entity["upvoter"].(string))
+		pubKeyBytes, errDecode := base64.StdEncoding.DecodeString(message["publicKey"].(string))
+
+		if errDecode != nil {
+			panic(errDecode)
+		}
+
+		publicKey := strings.ToUpper(byteToHex(pubKeyBytes))
+
+		var user User
+		errUser := db.C("users").Find(bson.M{"publicKey": publicKey}).One(&user)
+		if errUser != nil {
+			panic(errUser)
+		}
+
+		userID := user.ID
 		postID := bson.ObjectIdHex(entity["postId"].(string))
 
 		userPostVote := UserPostVote{}
@@ -307,7 +332,21 @@ func (app *JSONStoreApplication) DeliverTx(tx []byte) types.ResponseDeliverTx {
 	case "upvoteComment":
 		entity := body["entity"].(map[string]interface{})
 
-		userID := bson.ObjectIdHex(entity["upvoter"].(string))
+		pubKeyBytes, errDecode := base64.StdEncoding.DecodeString(message["publicKey"].(string))
+
+		if errDecode != nil {
+			panic(errDecode)
+		}
+
+		publicKey := strings.ToUpper(byteToHex(pubKeyBytes))
+
+		var user User
+		errUser := db.C("users").Find(bson.M{"publicKey": publicKey}).One(&user)
+		if errUser != nil {
+			panic(errUser)
+		}
+
+		userID := user.ID
 		commentID := bson.ObjectIdHex(entity["commentId"].(string))
 
 		userCommentVote := UserCommentVote{}
@@ -371,7 +410,78 @@ func (app *JSONStoreApplication) CheckTx(tx []byte) types.ResponseCheckTx {
 		return types.ResponseCheckTx{Code: code.CodeTypeBadSignature}
 	}
 
-	return types.ResponseCheckTx{Code: code.CodeTypeOK}
+	var bodyTemp interface{}
+
+	errBody := json.Unmarshal([]byte(message["body"].(string)), &bodyTemp)
+
+	if errBody != nil {
+		panic(errBody)
+	}
+
+	body := bodyTemp.(map[string]interface{})
+
+	codeType := code.CodeTypeOK
+
+	switch body["type"] {
+	case "createPost":
+		entity := body["entity"].(map[string]interface{})
+
+		if (entity["id"] == nil) || (bson.IsObjectIdHex(entity["id"].(string)) != true) {
+			codeType = code.CodeTypeBadData
+			break
+		}
+
+		if entity["title"] == nil || strings.TrimSpace(entity["title"].(string)) == "" {
+			codeType = code.CodeTypeBadData
+			break
+		}
+
+		if (entity["url"] != nil) && (strings.TrimSpace(entity["url"].(string)) != "") {
+			_, err := url.ParseRequestURI(entity["url"].(string))
+			if err != nil {
+				codeType = code.CodeTypeBadData
+				break
+			}
+		}
+	case "createUser":
+		entity := body["entity"].(map[string]interface{})
+
+		if (entity["id"] == nil) || (bson.IsObjectIdHex(entity["id"].(string)) != true) {
+			codeType = code.CodeTypeBadData
+			break
+		}
+
+		r, _ := regexp.Compile("^[A-Za-z_0-9]+$")
+
+		if (entity["username"] == nil) || (strings.TrimSpace(entity["username"].(string)) == "") || (r.MatchString(entity["username"].(string)) != true) {
+			codeType = code.CodeTypeBadData
+			break
+		}
+
+		if (entity["name"] == nil) || (strings.TrimSpace(entity["name"].(string)) == "") {
+			codeType = code.CodeTypeBadData
+			break
+		}
+	case "createComment":
+		entity := body["entity"].(map[string]interface{})
+
+		if (entity["id"] == nil) || (bson.IsObjectIdHex(entity["id"].(string)) != true) {
+			codeType = code.CodeTypeBadData
+			break
+		}
+
+		if (entity["postId"] == nil) || (bson.IsObjectIdHex(entity["postId"].(string)) != true) {
+			codeType = code.CodeTypeBadData
+			break
+		}
+
+		if (entity["content"] == nil) || (strings.TrimSpace(entity["content"].(string)) == "") {
+			codeType = code.CodeTypeBadData
+			break
+		}
+	}
+
+	return types.ResponseCheckTx{Code: codeType}
 }
 
 // Commit ...Commit the block. Calculate the appHash

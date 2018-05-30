@@ -36,8 +36,8 @@ type Post struct {
 	Date        time.Time     `bson:"date" json:"date"`
 	Score       float64       `bson:"score" json:"score"`
 	NumComments int           `bson:"numComments" json:"numComments"`
-	AskHN       bool          `bson:"askHN" json:"askHN"`
-	ShowHN      bool          `bson:"showHN" json:"showHN"`
+	AskUH       bool          `bson:"askUH" json:"askUH"`
+	ShowUH      bool          `bson:"showUH" json:"showUH"`
 }
 
 // Comment ...
@@ -158,10 +158,10 @@ func (app *JSONStoreApplication) DeliverTx(tx []byte) types.ResponseDeliverTx {
 			post.Text = entity["text"].(string)
 		}
 
-		if strings.Index(post.Title, "Show HN:") == 0 {
-			post.ShowHN = true
-		} else if strings.Index(post.Title, "Ask HN:") == 0 {
-			post.AskHN = true
+		if strings.Index(post.Title, "Show UH:") == 0 {
+			post.ShowUH = true
+		} else if strings.Index(post.Title, "Ask UH:") == 0 {
+			post.AskUH = true
 		}
 
 		pubKeyBytes, errDecode := base64.StdEncoding.DecodeString(message["publicKey"].(string))

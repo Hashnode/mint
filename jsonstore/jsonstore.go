@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math"
 	"net/url"
 	"regexp"
@@ -38,6 +37,7 @@ type Post struct {
 	NumComments int           `bson:"numComments" json:"numComments"`
 	AskUH       bool          `bson:"askUH" json:"askUH"`
 	ShowUH      bool          `bson:"showUH" json:"showUH"`
+	Spam        bool          `bson:"spam" json:"spam"`
 }
 
 // Comment ...
@@ -74,17 +74,6 @@ type UserCommentVote struct {
 	CommentID bson.ObjectId `bson:"commentID" json:"commentID"`
 }
 
-// DBStats ...
-type DBStats struct {
-	Collections int     `bson:"collections"`
-	Objects     int64   `bson:"objects"`
-	AvgObjSize  float64 `bson:"avgObjSize"`
-	DataSize    float64 `bson:"dataSize"`
-	StorageSize float64 `bson:"storageSize"`
-	FileSize    float64 `bson:"fileSize"`
-	IndexSize   float64 `bson:"indexSize"`
-}
-
 // JSONStoreApplication ...
 type JSONStoreApplication struct {
 	types.BaseApplication
@@ -96,6 +85,18 @@ func byteToHex(input []byte) string {
 		hexValue += fmt.Sprintf("%02x", v)
 	}
 	return hexValue
+}
+
+func findTotalDocuments(db *mgo.Database) int64 {
+	collections := [5]string{"posts", "comments", "users", "userpostvotes", "usercommentvotes"}
+	var sum int64
+
+	for _, collection := range collections {
+		count, _ := db.C(collection).Find(nil).Count()
+		sum += int64(count)
+	}
+
+	return sum
 }
 
 func hotScore(votes int, date time.Time) float64 {
@@ -187,6 +188,13 @@ func (app *JSONStoreApplication) DeliverTx(tx []byte) types.ResponseDeliverTx {
 
 		// Calculate hot rank
 		post.Score = hotScore(post.Upvotes, post.Date)
+
+		// While replaying the transaction, check if it has been marked as spam
+		spamCount, _ := db.C("spams").Find(bson.M{"postID": post.ID}).Count()
+
+		if spamCount > 0 {
+			post.Spam = true
+		}
 
 		dbErr := db.C("posts").Insert(post)
 
@@ -488,12 +496,9 @@ func (app *JSONStoreApplication) CheckTx(tx []byte) types.ResponseCheckTx {
 func (app *JSONStoreApplication) Commit() types.ResponseCommit {
 	appHash := make([]byte, 8)
 
-	var dbStats DBStats
-	if err := db.Run(bson.D{{"dbStats", 1}, {"scale", 1}}, &dbStats); err != nil {
-		log.Fatal(err)
-	}
+	count := findTotalDocuments(db)
 
-	binary.PutVarint(appHash, dbStats.Objects)
+	binary.PutVarint(appHash, count)
 
 	return types.ResponseCommit{Data: appHash}
 }

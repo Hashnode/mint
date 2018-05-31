@@ -28,10 +28,11 @@ func initJSONStore() error {
 	}
 	db := session.DB("tendermintdb")
 
-	errDrop := db.DropDatabase() // Clean the DB on each reboot
+	// Clean the DB on each reboot
+	collections := [5]string{"posts", "comments", "users", "userpostvotes", "usercommentvotes"}
 
-	if errDrop != nil {
-		panic(errDrop)
+	for _, collection := range collections {
+		db.C(collection).RemoveAll(nil)
 	}
 
 	app = jsonstore.NewJSONStoreApplication(db)

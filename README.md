@@ -90,5 +90,5 @@ The front-end for the blockchain is located at uphack.co and the corresponding c
 
 Let's talk. Shoot an email to one of the following emails: 
 
-- Sandeep Panda (sandeep@hashnode.com)
-- Mint team (mint@hashnode.com)
+- **Sandeep Panda** (sandeep@hashnode.com)
+- **Mint team** (mint@hashnode.com)

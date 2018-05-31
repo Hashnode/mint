@@ -86,6 +86,8 @@ If you want to improve the code and want to offer feedback, feel free to send a 
 
 The front-end for the blockchain is located at uphack.co and the corresponding code is at: `<Placeholder>`
 
+---
+
 ### Do you think your blockchain product needs Mint?
 
 Let's talk. Shoot an email to one of the following emails: 

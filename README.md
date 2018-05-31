@@ -1,4 +1,4 @@
-![](https://cdn.hashnode.com/res/hashnode/image/upload/v1527769778842/r1s29PT1Q.jpeg)
+![](https://cdn.hashnode.com/res/hashnode/image/upload/v1527769914653/Hy7BiDakm.jpeg)
 
 ## mint
 

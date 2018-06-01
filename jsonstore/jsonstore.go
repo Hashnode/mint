@@ -408,6 +408,7 @@ func (app *JSONStoreApplication) CheckTx(tx []byte) types.ResponseCheckTx {
 
 	message := temp.(map[string]interface{})
 
+	// ==== Signature Validation =======
 	pubKeyBytes, err := base64.StdEncoding.DecodeString(message["publicKey"].(string))
 	sigBytes, err := hex.DecodeString(message["signature"].(string))
 	messageBytes := []byte(message["body"].(string))
@@ -417,6 +418,17 @@ func (app *JSONStoreApplication) CheckTx(tx []byte) types.ResponseCheckTx {
 	if isCorrect != true {
 		return types.ResponseCheckTx{Code: code.CodeTypeBadSignature}
 	}
+	// ==== Signature Validation =======
+
+	// ==== Does the user really exist? ======
+	publicKey := strings.ToUpper(byteToHex(pubKeyBytes))
+
+	count, _ := db.C("users").Find(bson.M{"publicKey": publicKey}).Count()
+
+	if count == 0 {
+		return types.ResponseCheckTx{Code: code.CodeTypeBadData}
+	}
+	// ==== Does the user really exist? ======
 
 	var bodyTemp interface{}
 
@@ -430,6 +442,7 @@ func (app *JSONStoreApplication) CheckTx(tx []byte) types.ResponseCheckTx {
 
 	codeType := code.CodeTypeOK
 
+	// ===== Data Validation =======
 	switch body["type"] {
 	case "createPost":
 		entity := body["entity"].(map[string]interface{})
@@ -488,6 +501,8 @@ func (app *JSONStoreApplication) CheckTx(tx []byte) types.ResponseCheckTx {
 			break
 		}
 	}
+
+	// ===== Data Validation =======
 
 	return types.ResponseCheckTx{Code: codeType}
 }

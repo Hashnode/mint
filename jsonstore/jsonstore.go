@@ -420,16 +420,6 @@ func (app *JSONStoreApplication) CheckTx(tx []byte) types.ResponseCheckTx {
 	}
 	// ==== Signature Validation =======
 
-	// ==== Does the user really exist? ======
-	publicKey := strings.ToUpper(byteToHex(pubKeyBytes))
-
-	count, _ := db.C("users").Find(bson.M{"publicKey": publicKey}).Count()
-
-	if count == 0 {
-		return types.ResponseCheckTx{Code: code.CodeTypeBadData}
-	}
-	// ==== Does the user really exist? ======
-
 	var bodyTemp interface{}
 
 	errBody := json.Unmarshal([]byte(message["body"].(string)), &bodyTemp)
@@ -439,6 +429,18 @@ func (app *JSONStoreApplication) CheckTx(tx []byte) types.ResponseCheckTx {
 	}
 
 	body := bodyTemp.(map[string]interface{})
+
+	// ==== Does the user really exist? ======
+	if body["type"] != "createUser" {
+		publicKey := strings.ToUpper(byteToHex(pubKeyBytes))
+
+		count, _ := db.C("users").Find(bson.M{"publicKey": publicKey}).Count()
+
+		if count == 0 {
+			return types.ResponseCheckTx{Code: code.CodeTypeBadData}
+		}
+	}
+	// ==== Does the user really exist? ======
 
 	codeType := code.CodeTypeOK
 

@@ -122,7 +122,7 @@ As soon as you run `tendermint` and `mint`, you will start receiving blocks and 
 
 If you want to improve the code and want to offer feedback, feel free to send a PR. The whole purpose of open sourcing the repo at such an early stage is to get feedback and improve the code.
 
-The front-end for the blockchain is located at uphack.co and the corresponding code is at: `<Placeholder>`
+The front-end for the blockchain is located at uphack.co and the corresponding code is available [here](https://github.com/Hashnode/Uphack).
 
 ---
 

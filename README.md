@@ -55,18 +55,16 @@ To become a validator please follow these steps.
   Now open up `~/.tendermint/config/config.toml` and fill out the following details:
 
   - **moniker**: Enter a name for your validator node
-  - **seed**: Paste `<Placeholder>`. Tendermint will connect to these peers and start gossiping.
+  - **seed**: Paste `3f0d69a741e1cd399c5c2ca38d9f9711135e7a53@206.189.125.145:46656,0ee5713d18a6127dbeac10107860ef1c30edcfb9@192.241.232.63:46656,9446a039f0e2c1cd9a838bfb541f09e910a113ad@159.203.31.67:46656`. Tendermint will connect to these peers and start gossiping.
   - **persistent_peers**: Paste the content of `seeds`. Tendermint will maintain persistent connections with these peers.
 
   Save the file and exit.
 
   Now run `mint` and `tendermint` to finish set up. Make sure MongoDB is running at this point.
 
-  - cd ~
-  - touch mint.log
-  - touch tendermint.log
-  - nohup mint >mint.log 2>&1 &
-  - nohup tendermint node --consensus.create_empty_blocks=false >tendermint.log 2>&1 &
+  - `cd ~`
+  - `nohup mint >mint.log 2>&1 &`
+  - `nohup tendermint node --consensus.create_empty_blocks=false >tendermint.log 2>&1 &`
 
   `nohup` will make sure that the processes are running even after you have logged out of SSH session and closed the terminal. The logs will be written to `mint.log` and `tendermint.log`.
 
@@ -75,7 +73,47 @@ To become a validator please follow these steps.
 
 If you want to be a non-validating peer (which means you don't want to take part in consensus), you can do so by following the steps above (Step 2 onwards). However, the content of your `genesis.json` will be different. As it should contain the rest of the validators, you can paste the following into your `genesis.json`:
 
- `<Placeholder>`
+ ```
+ {
+  "genesis_time": "2018-06-01T06:56:45.810497687Z",
+  "chain_id": "mint-test",
+  "validators": [
+    {
+      "pub_key": {
+        "type": "AC26791624DE60",
+        "value": "4BLVMK+pB9ogowU2qxSH54H/eMdS2JLBmeGsUi3HsMg="
+      },
+      "power": 10,
+      "name": ""
+    },
+    {
+      "pub_key": {
+        "type": "AC26791624DE60",
+        "value": "kuaknLaXXOqPvUJa9O42HQ4dah3lpwdetRgud7Yb5jA="
+      },
+      "power": 10,
+      "name": ""
+    },
+    {
+      "pub_key": {
+        "type": "AC26791624DE60",
+        "value": "T/1Jn1K1vR7CWfNyU6P/t2D4pYLUr3FSyijuqmHjEkA="
+      },
+      "power": 10,
+      "name": ""
+    },
+    {
+      "pub_key": {
+        "type": "AC26791624DE60",
+        "value": "OSAe1dE/OYFxvMOK+NDraQ6EXOWxhYlup/IUPyjmoGA="
+      },
+      "power": 10,
+      "name": ""
+    }
+  ],
+  "app_hash": ""
+}
+ ```
 
 As soon as you run `tendermint` and `mint`, you will start receiving blocks and the latest state will be saved in MongoDB. If you want to check the state, open up `mongo` shell and use `tendermintdb` to explore the collections.
 

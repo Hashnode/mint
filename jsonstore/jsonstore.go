@@ -21,7 +21,7 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
-var _ types.Application = (*JSONStoreApplication)(nil)
+// var _ types.Application = (*JSONStoreApplication)(nil)
 var db *mgo.Database
 
 // Post ...
@@ -74,6 +74,14 @@ type UserCommentVote struct {
 	CommentID bson.ObjectId `bson:"commentID" json:"commentID"`
 }
 
+// Validator
+type Validator struct {
+	ID        bson.ObjectId   `bson:"_id" json:"_id"`
+	Name      string          `bson:"name" json:"name"`
+	PublicKey []byte          `bson:"publicKey" json:"publicKey"`
+	Votes     []bson.ObjectId `bson:"votes" json:"votes"`
+}
+
 // JSONStoreApplication ...
 type JSONStoreApplication struct {
 	types.BaseApplication
@@ -88,7 +96,7 @@ func byteToHex(input []byte) string {
 }
 
 func findTotalDocuments(db *mgo.Database) int64 {
-	collections := [5]string{"posts", "comments", "users", "userpostvotes", "usercommentvotes"}
+	collections := [6]string{"posts", "comments", "users", "userpostvotes", "usercommentvotes", "validators"}
 	var sum int64
 
 	for _, collection := range collections {
@@ -235,6 +243,37 @@ func (app *JSONStoreApplication) DeliverTx(tx []byte) types.ResponseDeliverTx {
 		}
 
 		break
+
+	case "upvoteValidator":
+		entity := body["entity"].(map[string]interface{})
+
+		// validate user exists
+		pubKeyBytes, errDecode := base64.StdEncoding.DecodeString(message["publicKey"].(string))
+
+		if errDecode != nil {
+			panic(errDecode)
+		}
+
+		publicKey := strings.ToUpper(byteToHex(pubKeyBytes))
+
+		var user User
+		err := db.C("users").Find(bson.M{"publicKey": publicKey}).One(&user)
+		if err != nil {
+			panic(err)
+		}
+
+		// userID := user.ID
+
+		fmt.Println("user validated!")
+		// validate validator exists & update votes
+
+		validatorID := bson.ObjectIdHex(entity["validator"].(string))
+		err = db.C("validators").Update(bson.M{"_id": validatorID}, bson.M{"$addToSet": bson.M{"votes": user.ID}})
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("validator validated!")
+
 	case "upvotePost":
 		entity := body["entity"].(map[string]interface{})
 
@@ -446,6 +485,24 @@ func (app *JSONStoreApplication) CheckTx(tx []byte) types.ResponseCheckTx {
 
 	// ===== Data Validation =======
 	switch body["type"] {
+	// TODO consider doing more sophisticated validations here like
+	// checking existance of users and validators here
+	// assuming tx cannot be tempered with beteen CheckTx and DeliverTx
+	case "upvoteValidator":
+		fmt.Println("received upvote start")
+		entity := body["entity"].(map[string]interface{})
+
+		if (entity["validator"] == nil) || (bson.IsObjectIdHex(entity["validator"].(string)) != true) {
+			codeType = code.CodeTypeBadData
+			break
+		}
+		fmt.Println("received upvote here")
+		if (entity["user"] == nil) || (bson.IsObjectIdHex(entity["user"].(string)) != true) {
+			codeType = code.CodeTypeBadData
+			break
+		}
+		fmt.Println("received upvote end")
+
 	case "createPost":
 		entity := body["entity"].(map[string]interface{})
 
@@ -523,4 +580,49 @@ func (app *JSONStoreApplication) Commit() types.ResponseCommit {
 // Query ... Query the blockchain. Unimplemented as of now.
 func (app *JSONStoreApplication) Query(reqQuery types.RequestQuery) (resQuery types.ResponseQuery) {
 	return
+}
+
+func (app *JSONStoreApplication) InitChain(req types.RequestInitChain) types.ResponseInitChain {
+	fmt.Println("calling InitChain")
+	validators := req.GetValidators()
+	var mintValidators []interface{}
+	if validators != nil {
+		for _, element := range validators {
+			// pubKey, err := crypto.PubKeyFromBytes(element.GetPubKey())
+			// if err != nil {
+			// 	panic(err)
+			// }
+			// fmt.Println(pubKey.Address())
+			// fmt.Println(pubKey.Bytes())
+			validator := Validator{
+				ID:        bson.NewObjectId(),
+				Name:      "validatorName",
+				PublicKey: element.GetPubKey(),
+				Votes:     []bson.ObjectId{},
+			}
+			mintValidators = append(mintValidators, validator)
+		}
+		dbErr := db.C("validators").Insert(mintValidators...)
+		if dbErr != nil {
+			panic(dbErr)
+		}
+	}
+	return types.ResponseInitChain{}
+}
+
+func (app *JSONStoreApplication) EndBlock(req types.RequestEndBlock) types.ResponseEndBlock {
+	var validators []Validator
+	err := db.C("validators").Find(nil).All(&validators)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	var tdValidators []types.Validator
+	for _, validator := range validators {
+		// TODO power should be saved to mongo too
+		tdValidator := types.Validator{PubKey: validator.PublicKey, Power: 10}
+		tdValidators = append(tdValidators, tdValidator)
+	}
+	fmt.Println(tdValidators)
+	return types.ResponseEndBlock{ValidatorUpdates: tdValidators}
 }

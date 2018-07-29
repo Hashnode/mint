@@ -21,6 +21,10 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
+const (
+	numActiveValidators = 4
+)
+
 // var _ types.Application = (*JSONStoreApplication)(nil)
 var db *mgo.Database
 
@@ -588,12 +592,6 @@ func (app *JSONStoreApplication) InitChain(req types.RequestInitChain) types.Res
 	var mintValidators []interface{}
 	if validators != nil {
 		for _, element := range validators {
-			// pubKey, err := crypto.PubKeyFromBytes(element.GetPubKey())
-			// if err != nil {
-			// 	panic(err)
-			// }
-			// fmt.Println(pubKey.Address())
-			// fmt.Println(pubKey.Bytes())
 			validator := Validator{
 				ID:        bson.NewObjectId(),
 				Name:      "validatorName",
@@ -611,18 +609,43 @@ func (app *JSONStoreApplication) InitChain(req types.RequestInitChain) types.Res
 }
 
 func (app *JSONStoreApplication) EndBlock(req types.RequestEndBlock) types.ResponseEndBlock {
-	var validators []Validator
-	err := db.C("validators").Find(nil).All(&validators)
-	if err != nil {
-		fmt.Println(err)
+	// TODO I've noticed that the order of elements with the same vote value is not nondeterministic
+	// which means last active can be swapped with first standby potentially on every query
+	// that could be considered an issue depending on requirements
+	project := bson.M{
+		"$project": bson.M{
+			"name":      1,
+			"publicKey": 1,
+			"votes":     bson.M{"$size": "$votes"},
+		},
+	}
+	sort := bson.M{
+		"$sort": bson.M{
+			"votes": -1,
+		},
+	}
+	limit := bson.M{
+		"$limit": numActiveValidators,
 	}
 
+	iter := db.C("validators").Pipe([]bson.M{project, sort, limit}).Iter()
+	defer iter.Close()
+
 	var tdValidators []types.Validator
-	for _, validator := range validators {
-		// TODO power should be saved to mongo too
-		tdValidator := types.Validator{PubKey: validator.PublicKey, Power: 10}
-		tdValidators = append(tdValidators, tdValidator)
+
+	var dbResult bson.M
+	for iter.Next(&dbResult) {
+		// fmt.Println(dbResult)
+		validator := types.Validator{
+			PubKey: dbResult["publicKey"].([]byte),
+			Power:  10,
+		}
+		tdValidators = append(tdValidators, validator)
+	}
+	if iter.Err() != nil {
+		panic(iter.Err())
 	}
 	fmt.Println(tdValidators)
+
 	return types.ResponseEndBlock{ValidatorUpdates: tdValidators}
 }

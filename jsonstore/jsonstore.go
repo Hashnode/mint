@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	numActiveValidators = 4
+	numActiveValidators = 3
 )
 
 // var _ types.Application = (*JSONStoreApplication)(nil)

@@ -25,7 +25,7 @@ const (
 	numActiveValidators = 3
 )
 
-// var _ types.Application = (*JSONStoreApplication)(nil)
+var _ types.Application = (*JSONStoreApplication)(nil)
 var db *mgo.Database
 
 // Post ...
@@ -266,11 +266,9 @@ func (app *JSONStoreApplication) DeliverTx(tx []byte) types.ResponseDeliverTx {
 			panic(err)
 		}
 
-		// userID := user.ID
-
 		fmt.Println("user validated!")
-		// validate validator exists & update votes
 
+		// validate validator exists & update votes
 		validatorID := bson.ObjectIdHex(entity["validator"].(string))
 		err = db.C("validators").Update(bson.M{"_id": validatorID}, bson.M{"$addToSet": bson.M{"votes": user.ID}})
 		if err != nil {
@@ -609,6 +607,12 @@ func (app *JSONStoreApplication) InitChain(req types.RequestInitChain) types.Res
 }
 
 func (app *JSONStoreApplication) EndBlock(req types.RequestEndBlock) types.ResponseEndBlock {
+	// TODO below solution needs confirmation through testing on multiple nodes.
+	// according to documentation "To add a new validator or update an existing one,
+	// simply include them in the list returned in the EndBlock response.
+	// To remove one, include it in the list with a power equal to 0."
+	// That means below solution may not be removing any validators atm!
+
 	// TODO I've noticed that the order of elements with the same vote value is not nondeterministic
 	// which means last active can be swapped with first standby potentially on every query
 	// that could be considered an issue depending on requirements

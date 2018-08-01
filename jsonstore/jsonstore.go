@@ -81,10 +81,19 @@ type UserCommentVote struct {
 
 // Validator
 type Validator struct {
-	ID        bson.ObjectId   `bson:"_id" json:"_id"`
-	Name      string          `bson:"name" json:"name"`
-	PublicKey []byte          `bson:"publicKey" json:"publicKey"`
-	Votes     []bson.ObjectId `bson:"votes" json:"votes"`
+	ID        bson.ObjectId `bson:"_id" json:"_id"`
+	Name      string        `bson:"name" json:"name"`
+	PublicKey []byte        `bson:"publicKey" json:"publicKey"`
+	Upvotes   int           `bson:"upvotes" json:"upvotes"`
+}
+
+// ValidatorsVotes
+// TODO there should be an index ensured on ValidatorID, UserID and
+// probs multikey index on ValidatorID and UserID
+type UserValidatorVote struct {
+	ID          bson.ObjectId `bson:"_id" json:"_id"`
+	ValidatorID bson.ObjectId `bson:"validatorID" json:"validatorID"`
+	UserID      bson.ObjectId `bson:"userID" json:"userID"`
 }
 
 // JSONStoreApplication ...
@@ -215,6 +224,7 @@ func (app *JSONStoreApplication) DeliverTx(tx []byte) types.ResponseDeliverTx {
 			panic(dbErr)
 		}
 
+		// TODO is that really needed? it's being created on upvotePost too.
 		var document UserPostVote
 		document.ID = bson.NewObjectId()
 		document.UserID = user.ID
@@ -266,14 +276,40 @@ func (app *JSONStoreApplication) DeliverTx(tx []byte) types.ResponseDeliverTx {
 		if err != nil {
 			panic(err)
 		}
-
 		fmt.Println("user validated!")
 
-		// validate validator exists & update votes
+		userID := user.ID
 		validatorID := bson.ObjectIdHex(entity["validator"].(string))
-		err = db.C("validators").Update(bson.M{"_id": validatorID}, bson.M{"$addToSet": bson.M{"votes": user.ID}})
+
+		// validate validator exists
+		_, err = db.C("validators").Find(bson.M{"_id": validatorID}).Limit(1).Count()
 		if err != nil {
 			panic(err)
+		}
+
+		userValidatorVote := UserValidatorVote{}
+		var upvote int8
+		err = db.C("uservalidatorvotes").Find(bson.M{"userID": userID, "validatorID": validatorID}).One(&userValidatorVote)
+		if err == nil {
+			errRemoval := db.C("uservalidatorvotes").Remove(bson.M{"userID": userID, "validatorID": validatorID})
+			if errRemoval == nil {
+				upvote = -1
+			}
+		} else {
+			var newUserValidatorVote UserValidatorVote
+			newUserValidatorVote.ID = bson.NewObjectId()
+			newUserValidatorVote.UserID = userID
+			newUserValidatorVote.ValidatorID = validatorID
+
+			insertErr := db.C("uservalidatorvotes").Insert(newUserValidatorVote)
+			if insertErr == nil {
+				upvote = 1
+			}
+		}
+		err = db.C("validators").Update(bson.M{"_id": validatorID}, bson.M{"$inc": bson.M{"upvotes": upvote}})
+		if err != nil {
+			// TODO should be properly logged
+			fmt.Sprintf("Failed to update votes for validator %s by user %s", validatorID, userID)
 		}
 		fmt.Println("validator validated!")
 
@@ -587,6 +623,7 @@ func (app *JSONStoreApplication) Query(reqQuery types.RequestQuery) (resQuery ty
 
 func (app *JSONStoreApplication) InitChain(req types.RequestInitChain) types.ResponseInitChain {
 	fmt.Println("calling InitChain")
+	// TODO only used for testing atm!!!
 	validators := req.GetValidators()
 	var mintValidators []interface{}
 	if validators != nil {
@@ -595,7 +632,7 @@ func (app *JSONStoreApplication) InitChain(req types.RequestInitChain) types.Res
 				ID:        bson.NewObjectId(),
 				Name:      "validatorName",
 				PublicKey: element.GetPubKey(),
-				Votes:     []bson.ObjectId{},
+				Upvotes:   0,
 			}
 			mintValidators = append(mintValidators, validator)
 		}
@@ -614,41 +651,21 @@ func (app *JSONStoreApplication) EndBlock(req types.RequestEndBlock) types.Respo
 	// To remove one, include it in the list with a power equal to 0."
 	// That means below solution may not be removing any validators atm!
 
-	// TODO I've noticed that the order of elements with the same vote value is not nondeterministic
-	// which means last active can be swapped with first standby potentially on every query
-	// that could be considered an issue depending on requirements
-	project := bson.M{
-		"$project": bson.M{
-			"name":      1,
-			"publicKey": 1,
-			"votes":     bson.M{"$size": "$votes"},
-		},
-	}
-	sort := bson.M{
-		"$sort": bson.M{
-			"votes": -1,
-		},
-	}
-	limit := bson.M{
-		"$limit": numActiveValidators,
-	}
+	var validators []Validator
 
-	iter := db.C("validators").Pipe([]bson.M{project, sort, limit}).Iter()
-	defer iter.Close()
+	err := db.C("validators").Find(nil).Sort("-upvotes").Limit(numActiveValidators).All(&validators)
+	if err != nil {
+		panic(err)
+	}
 
 	var tdValidators []types.Validator
 
-	var dbResult bson.M
-	for iter.Next(&dbResult) {
-		// fmt.Println(dbResult)
-		validator := types.Validator{
-			PubKey: dbResult["publicKey"].([]byte),
+	for _, validator := range validators {
+		tdValidator := types.Validator{
+			PubKey: validator.PublicKey,
 			Power:  10,
 		}
-		tdValidators = append(tdValidators, validator)
-	}
-	if iter.Err() != nil {
-		panic(iter.Err())
+		tdValidators = append(tdValidators, tdValidator)
 	}
 	fmt.Println(tdValidators)
 

@@ -32,8 +32,7 @@ func initJSONStore() error {
 	db := session.DB("tendermintdb")
 
 	// Clean the DB on each reboot
-	collections := [6]string{"posts", "comments", "users", "userpostvotes", "usercommentvotes", "validators"}
-	// collections := [6]string{"posts", "comments", "users", "userpostvotes", "usercommentvotes"}
+	collections := [7]string{"posts", "comments", "users", "userpostvotes", "usercommentvotes", "validators", "uservalidatorvotes"}
 
 	for _, collection := range collections {
 		db.C(collection).RemoveAll(nil)

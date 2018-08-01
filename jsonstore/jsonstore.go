@@ -22,7 +22,8 @@ import (
 )
 
 const (
-	numActiveValidators = 3
+	// TODO should come from config file
+	numActiveValidators = 4
 )
 
 var _ types.Application = (*JSONStoreApplication)(nil)

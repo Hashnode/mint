@@ -1,10 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"mint/jsonstore"
 	"os"
-	"strconv"
 
 	"github.com/tendermint/abci/server"
 	"github.com/tendermint/abci/types"
@@ -24,8 +22,7 @@ func initJSONStore() error {
 	// Create the application
 	var app types.Application
 
-	fmt.Println("running aginst mongo: ", os.Getenv("MONGO_URL"))
-	session, err := mgo.Dial(os.Getenv("MONGO_URL"))
+	session, err := mgo.Dial("localhost")
 	if err != nil {
 		panic(err)
 	}
@@ -41,16 +38,7 @@ func initJSONStore() error {
 	app = jsonstore.NewJSONStoreApplication(db)
 
 	// Start the listener
-	port := 46658
-	if os.Args[1] != "" {
-		port, err = strconv.Atoi(os.Args[1])
-		if err != nil {
-			panic(err)
-		}
-	}
-	fmt.Println(os.Args[1:])
-	fmt.Println(port)
-	srv, err := server.NewServer(fmt.Sprintf("tcp://0.0.0.0:%d", port), "socket", app)
+	srv, err := server.NewServer("tcp://0.0.0.0:46658", "socket", app)
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"mint/jsonstore"
 	"os"
 
@@ -10,6 +11,10 @@ import (
 
 	cmn "github.com/tendermint/tmlibs/common"
 	"github.com/tendermint/tmlibs/log"
+)
+
+const (
+	defaultMongoHost = "localhost"
 )
 
 func main() {
@@ -22,7 +27,11 @@ func initJSONStore() error {
 	// Create the application
 	var app types.Application
 
-	session, err := mgo.Dial("localhost")
+	mongoHost := os.Args[2]
+	if mongoHost == "" {
+		mongoHost = defaultMongoHost
+	}
+	session, err := mgo.Dial(mongoHost)
 	if err != nil {
 		panic(err)
 	}
@@ -38,7 +47,8 @@ func initJSONStore() error {
 	app = jsonstore.NewJSONStoreApplication(db)
 
 	// Start the listener
-	srv, err := server.NewServer("tcp://0.0.0.0:46658", "socket", app)
+	proxyAppPort := os.Args[1]
+	srv, err := server.NewServer(fmt.Sprintf("tcp://0.0.0.0:%s", proxyAppPort), "socket", app)
 	if err != nil {
 		return err
 	}

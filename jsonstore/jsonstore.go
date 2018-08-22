@@ -15,7 +15,7 @@ import (
 
 	"mint/code"
 
-	"github.com/tendermint/abci/types"
+	"github.com/tendermint/tendermint/abci/types"
 	"golang.org/x/crypto/ed25519"
 	mgo "gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
@@ -81,10 +81,18 @@ type UserCommentVote struct {
 
 // Validator
 type Validator struct {
-	ID        bson.ObjectId `bson:"_id" json:"_id"`
-	Name      string        `bson:"name" json:"name"`
-	PublicKey []byte        `bson:"publicKey" json:"publicKey"`
-	Upvotes   int           `bson:"upvotes" json:"upvotes"`
+	ID      []byte       `bson:"_id" json:"_id"`
+	Name    string       `bson:"name" json:"name"`
+	PubKey  types.PubKey `bson:"pubKey" json:"pubKey"`
+	Upvotes int          `bson:"upvotes" json:"upvotes"`
+	Power   int64        `bson:"power" json:"power"`
+}
+
+func (v Validator) ToTDValidator() types.Validator {
+	return types.Validator{
+		PubKey: v.PubKey,
+		Power:  v.Power,
+	}
 }
 
 // ValidatorsVotes
@@ -624,15 +632,20 @@ func (app *JSONStoreApplication) Query(reqQuery types.RequestQuery) (resQuery ty
 func (app *JSONStoreApplication) InitChain(req types.RequestInitChain) types.ResponseInitChain {
 	fmt.Println("calling InitChain")
 	// TODO only used for testing atm!!!
-	validators := req.GetValidators()
+	addValidators(req.GetValidators())
+	return types.ResponseInitChain{}
+}
+
+func addValidators(validators []types.Validator) {
 	var mintValidators []interface{}
 	if validators != nil {
 		for _, element := range validators {
 			validator := Validator{
-				ID:        bson.NewObjectId(),
-				Name:      "validatorName",
-				PublicKey: element.GetPubKey(),
-				Upvotes:   0,
+				ID:      element.GetAddress(),
+				Name:    "mintValidator",
+				PubKey:  element.GetPubKey(),
+				Power:   element.GetPower(),
+				Upvotes: 0,
 			}
 			mintValidators = append(mintValidators, validator)
 		}
@@ -641,7 +654,6 @@ func (app *JSONStoreApplication) InitChain(req types.RequestInitChain) types.Res
 			panic(dbErr)
 		}
 	}
-	return types.ResponseInitChain{}
 }
 
 func (app *JSONStoreApplication) EndBlock(req types.RequestEndBlock) types.ResponseEndBlock {
@@ -661,10 +673,7 @@ func (app *JSONStoreApplication) EndBlock(req types.RequestEndBlock) types.Respo
 	var tdValidators []types.Validator
 
 	for _, validator := range validators {
-		tdValidator := types.Validator{
-			PubKey: validator.PublicKey,
-			Power:  10,
-		}
+		tdValidator := validator.ToTDValidator()
 		tdValidators = append(tdValidators, tdValidator)
 	}
 	fmt.Println(tdValidators)

@@ -5,12 +5,16 @@ import (
 	"mint/jsonstore"
 	"os"
 
-	"github.com/tendermint/abci/server"
-	"github.com/tendermint/abci/types"
+	"github.com/tendermint/tendermint/abci/server"
+	"github.com/tendermint/tendermint/abci/types"
 	mgo "gopkg.in/mgo.v2"
 
-	cmn "github.com/tendermint/tmlibs/common"
-	"github.com/tendermint/tmlibs/log"
+	cmn "github.com/tendermint/tendermint/libs/common"
+	"github.com/tendermint/tendermint/libs/log"
+)
+
+const (
+	defaultMongoHost = "localhost"
 )
 
 const (

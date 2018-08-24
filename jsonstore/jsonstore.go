@@ -15,10 +15,15 @@ import (
 
 	"mint/code"
 
-	"github.com/tendermint/abci/types"
+	"github.com/tendermint/tendermint/abci/types"
 	"golang.org/x/crypto/ed25519"
 	mgo "gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
+)
+
+const (
+	// TODO should come from config file
+	numActiveValidators = 4
 )
 
 var _ types.Application = (*JSONStoreApplication)(nil)
@@ -74,6 +79,31 @@ type UserCommentVote struct {
 	CommentID bson.ObjectId `bson:"commentID" json:"commentID"`
 }
 
+// Validator
+type Validator struct {
+	ID      []byte       `bson:"_id" json:"_id"`
+	Name    string       `bson:"name" json:"name"`
+	PubKey  types.PubKey `bson:"pubKey" json:"pubKey"`
+	Upvotes int          `bson:"upvotes" json:"upvotes"`
+	Power   int64        `bson:"power" json:"power"`
+}
+
+func (v Validator) ToTDValidator() types.Validator {
+	return types.Validator{
+		PubKey: v.PubKey,
+		Power:  v.Power,
+	}
+}
+
+// ValidatorsVotes
+// TODO there should be an index ensured on ValidatorID, UserID and
+// probs multikey index on ValidatorID and UserID
+type UserValidatorVote struct {
+	ID          bson.ObjectId `bson:"_id" json:"_id"`
+	ValidatorID bson.ObjectId `bson:"validatorID" json:"validatorID"`
+	UserID      bson.ObjectId `bson:"userID" json:"userID"`
+}
+
 // JSONStoreApplication ...
 type JSONStoreApplication struct {
 	types.BaseApplication
@@ -88,7 +118,7 @@ func byteToHex(input []byte) string {
 }
 
 func findTotalDocuments(db *mgo.Database) int64 {
-	collections := [5]string{"posts", "comments", "users", "userpostvotes", "usercommentvotes"}
+	collections := [6]string{"posts", "comments", "users", "userpostvotes", "usercommentvotes", "validators"}
 	var sum int64
 
 	for _, collection := range collections {
@@ -202,6 +232,7 @@ func (app *JSONStoreApplication) DeliverTx(tx []byte) types.ResponseDeliverTx {
 			panic(dbErr)
 		}
 
+		// TODO is that really needed? it's being created on upvotePost too.
 		var document UserPostVote
 		document.ID = bson.NewObjectId()
 		document.UserID = user.ID
@@ -235,6 +266,61 @@ func (app *JSONStoreApplication) DeliverTx(tx []byte) types.ResponseDeliverTx {
 		}
 
 		break
+
+	case "upvoteValidator":
+		entity := body["entity"].(map[string]interface{})
+
+		// validate user exists
+		pubKeyBytes, errDecode := base64.StdEncoding.DecodeString(message["publicKey"].(string))
+
+		if errDecode != nil {
+			panic(errDecode)
+		}
+
+		publicKey := strings.ToUpper(byteToHex(pubKeyBytes))
+
+		var user User
+		err := db.C("users").Find(bson.M{"publicKey": publicKey}).One(&user)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("user validated!")
+
+		userID := user.ID
+		validatorID := bson.ObjectIdHex(entity["validator"].(string))
+
+		// validate validator exists
+		_, err = db.C("validators").Find(bson.M{"_id": validatorID}).Limit(1).Count()
+		if err != nil {
+			panic(err)
+		}
+
+		userValidatorVote := UserValidatorVote{}
+		var upvote int8
+		err = db.C("uservalidatorvotes").Find(bson.M{"userID": userID, "validatorID": validatorID}).One(&userValidatorVote)
+		if err == nil {
+			errRemoval := db.C("uservalidatorvotes").Remove(bson.M{"userID": userID, "validatorID": validatorID})
+			if errRemoval == nil {
+				upvote = -1
+			}
+		} else {
+			var newUserValidatorVote UserValidatorVote
+			newUserValidatorVote.ID = bson.NewObjectId()
+			newUserValidatorVote.UserID = userID
+			newUserValidatorVote.ValidatorID = validatorID
+
+			insertErr := db.C("uservalidatorvotes").Insert(newUserValidatorVote)
+			if insertErr == nil {
+				upvote = 1
+			}
+		}
+		err = db.C("validators").Update(bson.M{"_id": validatorID}, bson.M{"$inc": bson.M{"upvotes": upvote}})
+		if err != nil {
+			// TODO should be properly logged
+			fmt.Sprintf("Failed to update votes for validator %s by user %s", validatorID, userID)
+		}
+		fmt.Println("validator validated!")
+
 	case "upvotePost":
 		entity := body["entity"].(map[string]interface{})
 
@@ -446,6 +532,24 @@ func (app *JSONStoreApplication) CheckTx(tx []byte) types.ResponseCheckTx {
 
 	// ===== Data Validation =======
 	switch body["type"] {
+	// TODO consider doing more sophisticated validations here like
+	// checking existance of users and validators here
+	// assuming tx cannot be tempered with beteen CheckTx and DeliverTx
+	case "upvoteValidator":
+		fmt.Println("received upvote start")
+		entity := body["entity"].(map[string]interface{})
+
+		if (entity["validator"] == nil) || (bson.IsObjectIdHex(entity["validator"].(string)) != true) {
+			codeType = code.CodeTypeBadData
+			break
+		}
+		fmt.Println("received upvote here")
+		if (entity["user"] == nil) || (bson.IsObjectIdHex(entity["user"].(string)) != true) {
+			codeType = code.CodeTypeBadData
+			break
+		}
+		fmt.Println("received upvote end")
+
 	case "createPost":
 		entity := body["entity"].(map[string]interface{})
 
@@ -523,4 +627,56 @@ func (app *JSONStoreApplication) Commit() types.ResponseCommit {
 // Query ... Query the blockchain. Unimplemented as of now.
 func (app *JSONStoreApplication) Query(reqQuery types.RequestQuery) (resQuery types.ResponseQuery) {
 	return
+}
+
+func (app *JSONStoreApplication) InitChain(req types.RequestInitChain) types.ResponseInitChain {
+	fmt.Println("calling InitChain")
+	// TODO only used for testing atm!!!
+	addValidators(req.GetValidators())
+	return types.ResponseInitChain{}
+}
+
+func addValidators(validators []types.Validator) {
+	var mintValidators []interface{}
+	if validators != nil {
+		for _, element := range validators {
+			validator := Validator{
+				ID:      element.GetAddress(),
+				Name:    "mintValidator",
+				PubKey:  element.GetPubKey(),
+				Power:   element.GetPower(),
+				Upvotes: 0,
+			}
+			mintValidators = append(mintValidators, validator)
+		}
+		dbErr := db.C("validators").Insert(mintValidators...)
+		if dbErr != nil {
+			panic(dbErr)
+		}
+	}
+}
+
+func (app *JSONStoreApplication) EndBlock(req types.RequestEndBlock) types.ResponseEndBlock {
+	// TODO below solution needs confirmation through testing on multiple nodes.
+	// according to documentation "To add a new validator or update an existing one,
+	// simply include them in the list returned in the EndBlock response.
+	// To remove one, include it in the list with a power equal to 0."
+	// That means below solution may not be removing any validators atm!
+
+	var validators []Validator
+
+	err := db.C("validators").Find(nil).Sort("-upvotes").Limit(numActiveValidators).All(&validators)
+	if err != nil {
+		panic(err)
+	}
+
+	var tdValidators []types.Validator
+
+	for _, validator := range validators {
+		tdValidator := validator.ToTDValidator()
+		tdValidators = append(tdValidators, tdValidator)
+	}
+	fmt.Println(tdValidators)
+
+	return types.ResponseEndBlock{ValidatorUpdates: tdValidators}
 }

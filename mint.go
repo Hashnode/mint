@@ -1,15 +1,24 @@
 package main
 
 import (
+	"fmt"
 	"mint/jsonstore"
 	"os"
 
-	"github.com/tendermint/abci/server"
-	"github.com/tendermint/abci/types"
+	"github.com/tendermint/tendermint/abci/server"
+	"github.com/tendermint/tendermint/abci/types"
 	mgo "gopkg.in/mgo.v2"
 
-	cmn "github.com/tendermint/tmlibs/common"
-	"github.com/tendermint/tmlibs/log"
+	cmn "github.com/tendermint/tendermint/libs/common"
+	"github.com/tendermint/tendermint/libs/log"
+)
+
+const (
+	defaultMongoHost = "localhost"
+)
+
+const (
+	defaultMongoHost = "localhost"
 )
 
 func main() {
@@ -22,14 +31,18 @@ func initJSONStore() error {
 	// Create the application
 	var app types.Application
 
-	session, err := mgo.Dial("localhost")
+	mongoHost := os.Args[2]
+	if mongoHost == "" {
+		mongoHost = defaultMongoHost
+	}
+	session, err := mgo.Dial(mongoHost)
 	if err != nil {
 		panic(err)
 	}
 	db := session.DB("tendermintdb")
 
 	// Clean the DB on each reboot
-	collections := [5]string{"posts", "comments", "users", "userpostvotes", "usercommentvotes"}
+	collections := [7]string{"posts", "comments", "users", "userpostvotes", "usercommentvotes", "validators", "uservalidatorvotes"}
 
 	for _, collection := range collections {
 		db.C(collection).RemoveAll(nil)
@@ -38,7 +51,8 @@ func initJSONStore() error {
 	app = jsonstore.NewJSONStoreApplication(db)
 
 	// Start the listener
-	srv, err := server.NewServer("tcp://0.0.0.0:46658", "socket", app)
+	proxyAppPort := os.Args[1]
+	srv, err := server.NewServer(fmt.Sprintf("tcp://0.0.0.0:%s", proxyAppPort), "socket", app)
 	if err != nil {
 		return err
 	}

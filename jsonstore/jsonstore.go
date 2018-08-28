@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Hashnode/mint/code"
@@ -595,6 +596,92 @@ func (app *JSONStoreApplication) Query(reqQuery types.RequestQuery) (resQuery ty
 		}
 
 		resData, err := json.Marshal(posts)
+		if err != nil {
+			resQuery.Log = err.Error()
+			break
+		}
+		resQuery.Value = resData
+	case "/get-upvote-status":
+		var wg sync.WaitGroup
+		var status map[string]interface{}
+
+		status = make(map[string]interface{})
+
+		err := db.C("users").Find(bson.M{"publicKey": t["publicKey"].(string)}).One(&user)
+		if err != nil {
+			panic(err)
+		}
+
+		for _, postID := range t["postIds"].([]interface{}) {
+			wg.Add(1)
+			go func(postID string) {
+				defer wg.Done()
+				count, err := db.C("userpostvotes").Find(bson.M{"postID": bson.ObjectIdHex(postID), "userID": user.ID}).Count()
+				if err != nil {
+					panic(err)
+				}
+
+				if count > 0 {
+					status[postID] = true
+				}
+			}(postID.(string))
+		}
+
+		wg.Wait()
+		resData, err := json.Marshal(status)
+		if err != nil {
+			resQuery.Log = err.Error()
+			break
+		}
+		resQuery.Value = resData
+	case "/comment":
+		var comment map[string]interface{}
+		err := db.C("comments").Find(bson.M{"_id": bson.ObjectIdHex(t["id"].(string))}).One(&comment)
+		if err != nil {
+			panic(err)
+		}
+
+		err = db.C("users").Find(bson.M{"_id": comment["author"].(bson.ObjectId)}).One(&user)
+		if err != nil {
+			panic(err)
+		}
+
+		comment["author"] = user
+
+		resData, err := json.Marshal(comment)
+		if err != nil {
+			resQuery.Log = err.Error()
+			break
+		}
+		resQuery.Value = resData
+	case "/get-comment-upvote-status":
+		var wg sync.WaitGroup
+		var status map[string]interface{}
+
+		status = make(map[string]interface{})
+
+		err := db.C("users").Find(bson.M{"publicKey": t["publicKey"].(string)}).One(&user)
+		if err != nil {
+			panic(err)
+		}
+
+		for _, commentID := range t["commentIds"].([]interface{}) {
+			wg.Add(1)
+			go func(commentID string) {
+				defer wg.Done()
+				count, err := db.C("usercommentvotes").Find(bson.M{"commentID": bson.ObjectIdHex(commentID), "userID": user.ID}).Count()
+				if err != nil {
+					panic(err)
+				}
+
+				if count > 0 {
+					status[commentID] = true
+				}
+			}(commentID.(string))
+		}
+
+		wg.Wait()
+		resData, err := json.Marshal(status)
 		if err != nil {
 			resQuery.Log = err.Error()
 			break

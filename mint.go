@@ -1,8 +1,9 @@
 package main
 
 import (
-	"mint/jsonstore"
 	"os"
+
+	"github.com/Hashnode/mint/jsonstore"
 
 	"github.com/tendermint/abci/server"
 	"github.com/tendermint/abci/types"
@@ -38,7 +39,7 @@ func initJSONStore() error {
 	app = jsonstore.NewJSONStoreApplication(db)
 
 	// Start the listener
-	srv, err := server.NewServer("tcp://0.0.0.0:46658", "socket", app)
+	srv, err := server.NewServer("tcp://0.0.0.0:26658", "socket", app)
 	if err != nil {
 		return err
 	}

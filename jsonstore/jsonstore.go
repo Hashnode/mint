@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"mint/code"
+	"github.com/Hashnode/mint/code"
 
 	"github.com/tendermint/abci/types"
 	"golang.org/x/crypto/ed25519"
@@ -85,6 +85,27 @@ func byteToHex(input []byte) string {
 		hexValue += fmt.Sprintf("%02x", v)
 	}
 	return hexValue
+}
+
+func getPosts(db *mgo.Database, sortBy string, searchConfig map[string]interface{}) ([]interface{}, error) {
+	var posts []interface{}
+	var user User
+
+	err := db.C("posts").Find(searchConfig).Sort("-" + sortBy).All(&posts)
+	if err != nil {
+		panic(err)
+	}
+
+	for i := range posts {
+		err = db.C("users").Find(bson.M{"_id": posts[i].(bson.M)["author"].(bson.ObjectId)}).One(&user)
+		if err != nil {
+			panic(err)
+		}
+
+		posts[i].(bson.M)["author"] = user
+	}
+
+	return posts, nil
 }
 
 func findTotalDocuments(db *mgo.Database) int64 {
@@ -522,5 +543,64 @@ func (app *JSONStoreApplication) Commit() types.ResponseCommit {
 
 // Query ... Query the blockchain. Unimplemented as of now.
 func (app *JSONStoreApplication) Query(reqQuery types.RequestQuery) (resQuery types.ResponseQuery) {
+	var temp interface{}
+	var user User
+	var t map[string]interface{}
+
+	if reqQuery.Data != nil {
+		err := json.Unmarshal(reqQuery.Data, &temp)
+		if err != nil {
+			panic(err)
+		}
+
+		t = temp.(map[string]interface{})
+	}
+
+	switch reqQuery.Path {
+	case "/fetch-user":
+		err := db.C("users").Find(bson.M{"publicKey": t["publicKey"].(string)}).One(&user)
+		if err != nil {
+			resQuery.Log = err.Error()
+			break
+		}
+
+		resData, err := json.Marshal(user)
+		if err != nil {
+			resQuery.Log = err.Error()
+			break
+		}
+		resQuery.Value = resData
+	case "/get-posts":
+
+		searchConfig := make(map[string]interface{})
+
+		searchConfig["spam"] = false
+		if val, ok := t["type"]; ok {
+			if val.(string) == "askUH" || val.(string) == "showUH" {
+				searchConfig[val.(string)] = true
+			} else {
+				resQuery.Log = "type field can only have values 'showUH' or 'askUH'"
+				break
+			}
+		}
+
+		if t["sortBy"].(string) != "score" && t["sortBy"].(string) != "date" {
+			resQuery.Log = "sortBy field can only have values 'score' or 'date'"
+			break
+		}
+
+		posts, err := getPosts(db, t["sortBy"].(string), searchConfig)
+		if err != nil {
+			panic(err)
+		}
+
+		resData, err := json.Marshal(posts)
+		if err != nil {
+			resQuery.Log = err.Error()
+			break
+		}
+		resQuery.Value = resData
+	}
+
 	return
 }

@@ -7,13 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"mint/code"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
-
-	"mint/code"
 
 	"github.com/tendermint/abci/types"
 	"golang.org/x/crypto/ed25519"
@@ -79,6 +78,13 @@ type JSONStoreApplication struct {
 	types.BaseApplication
 }
 
+// Validator ...
+type Validator struct {
+	ID     bson.ObjectId `bson:"_id" json:"_id"`
+	Power  int64         `bson:"power" json:"power"`
+	PubKey []byte        `bson:"pubKey" json:"pubKey"`
+}
+
 func byteToHex(input []byte) string {
 	var hexValue string
 	for _, v := range input {
@@ -120,6 +126,18 @@ func NewJSONStoreApplication(dbCopy *mgo.Database) *JSONStoreApplication {
 // Info ...
 func (app *JSONStoreApplication) Info(req types.RequestInfo) (resInfo types.ResponseInfo) {
 	return types.ResponseInfo{Data: fmt.Sprintf("{\"size\":%v}", 0)}
+}
+
+// InitChain ... Update list of validators in db on genesis
+func (app *JSONStoreApplication) InitChain(params types.RequestInitChain) types.ResponseInitChain {
+	// TODO: Batch this in one go
+	for _, v := range params.Validators {
+		db.C("validators").Upsert(
+			bson.M{"pubKey": v.PubKey},
+			bson.M{"$set": bson.M{"power": v.Power, "pubKey": v.PubKey}},
+		)
+	}
+	return types.ResponseInitChain{}
 }
 
 // DeliverTx ... Update the global state
@@ -392,6 +410,11 @@ func (app *JSONStoreApplication) DeliverTx(tx []byte) types.ResponseDeliverTx {
 		db.C("comments").Update(bson.M{"_id": commentID}, bson.M{"$set": bson.M{"score": score}})
 
 		break
+	case "upvoteValidator":
+		entity := body["entity"].(map[string]interface{})
+		validatorID := bson.ObjectIdHex(entity["validatorID"].(string))
+		db.C("validators").Update(bson.M{"_id": validatorID}, bson.M{"$inc": bson.M{"power": 1}})
+		break
 	}
 
 	return types.ResponseDeliverTx{Code: code.CodeTypeOK, Tags: nil}
@@ -502,10 +525,16 @@ func (app *JSONStoreApplication) CheckTx(tx []byte) types.ResponseCheckTx {
 			codeType = code.CodeTypeBadData
 			break
 		}
+	case "upvoteValidator":
+		entity := body["entity"].(map[string]interface{})
+		if (entity["validatorID"] == nil) || (bson.IsObjectIdHex(entity["validatorID"].(string)) != true) {
+			codeType = code.CodeTypeBadData
+			break
+		}
+		break
 	}
 
 	// ===== Data Validation =======
-
 	return types.ResponseCheckTx{Code: codeType}
 }
 
@@ -523,4 +552,22 @@ func (app *JSONStoreApplication) Commit() types.ResponseCommit {
 // Query ... Query the blockchain. Unimplemented as of now.
 func (app *JSONStoreApplication) Query(reqQuery types.RequestQuery) (resQuery types.ResponseQuery) {
 	return
+}
+
+// EndBlock ... Update list of validators here
+func (app *JSONStoreApplication) EndBlock(req types.RequestEndBlock) types.ResponseEndBlock {
+	// TODO: Do the following only when last transaction was "upvoteValidator"
+	var results []Validator
+	db.C("validators").Find(nil).Sort("-power").All(&results)
+	var validatorUpdates []types.Validator
+	for i, k := range results {
+		if i < 21 {
+			validatorUpdates = append(validatorUpdates, types.Validator{Power: k.Power, PubKey: k.PubKey})
+		} else {
+			// All validators beyond first 21 should be removed i.e. power = 0
+			validatorUpdates = append(validatorUpdates, types.Validator{Power: 0, PubKey: k.PubKey})
+		}
+	}
+
+	return types.ResponseEndBlock{ValidatorUpdates: validatorUpdates}
 }

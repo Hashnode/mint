@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"mint/code"
 	"net/url"
@@ -416,7 +417,7 @@ func (app *JSONStoreApplication) DeliverTx(tx []byte) types.ResponseDeliverTx {
 		db.C("validators").Update(bson.M{"_id": validatorID}, bson.M{"$inc": bson.M{"power": 1}})
 		break
 	}
-
+	log.Println(body["type"])
 	return types.ResponseDeliverTx{Code: code.CodeTypeOK, Tags: nil}
 }
 
@@ -535,6 +536,7 @@ func (app *JSONStoreApplication) CheckTx(tx []byte) types.ResponseCheckTx {
 	}
 
 	// ===== Data Validation =======
+	log.Println(codeType, body["type"])
 	return types.ResponseCheckTx{Code: codeType}
 }
 

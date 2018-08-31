@@ -532,7 +532,6 @@ func (app *JSONStoreApplication) CheckTx(tx []byte) types.ResponseCheckTx {
 			codeType = code.CodeTypeBadData
 			break
 		}
-		break
 	}
 
 	// ===== Data Validation =======
@@ -563,7 +562,7 @@ func (app *JSONStoreApplication) EndBlock(req types.RequestEndBlock) types.Respo
 	db.C("validators").Find(nil).Sort("-power").All(&results)
 	var validatorUpdates []types.Validator
 	for i, k := range results {
-		if i < 21 {
+		if i < 3 {
 			validatorUpdates = append(validatorUpdates, types.Validator{Power: k.Power, PubKey: k.PubKey})
 		} else {
 			// All validators beyond first 21 should be removed i.e. power = 0

@@ -548,14 +548,12 @@ func (app *JSONStoreApplication) Query(reqQuery types.RequestQuery) (resQuery ty
 	var user User
 	var t map[string]interface{}
 
-	if reqQuery.Data != nil {
-		err := json.Unmarshal(reqQuery.Data, &temp)
-		if err != nil {
-			panic(err)
-		}
-
-		t = temp.(map[string]interface{})
+	err := json.Unmarshal(reqQuery.Data, &temp)
+	if err != nil {
+		panic(err)
 	}
+
+	t = temp.(map[string]interface{})
 
 	switch reqQuery.Path {
 	case "/fetch-user":
@@ -687,6 +685,55 @@ func (app *JSONStoreApplication) Query(reqQuery types.RequestQuery) (resQuery ty
 			break
 		}
 		resQuery.Value = resData
+	case "/post":
+		var wg sync.WaitGroup
+		var post map[string]interface{}
+		var user User
+		var comments []map[string]interface{}
+
+		post = make(map[string]interface{})
+
+		err := db.C("posts").Find(bson.M{"_id": bson.ObjectIdHex(t["id"].(string))}).One(&post)
+		if err != nil {
+			panic(err)
+		}
+
+		err = db.C("users").Find(bson.M{"_id": post["author"].(bson.ObjectId)}).One(&user)
+		if err != nil {
+			panic(err)
+		}
+
+		post["author"] = user
+
+		err = db.C("comments").Find(bson.M{"postID": bson.ObjectIdHex(t["id"].(string))}).All(&comments)
+		if err != nil {
+			panic(err)
+		}
+
+		for i := range comments {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				var user User
+				err = db.C("users").Find(bson.M{"_id": comments[i]["author"].(bson.ObjectId)}).One(&user)
+				if err != nil {
+					panic(err)
+				}
+
+				comments[i]["author"] = user
+			}(i)
+		}
+
+		post["comments"] = comments
+
+		wg.Wait()
+		resData, err := json.Marshal(post)
+		if err != nil {
+			resQuery.Log = err.Error()
+			break
+		}
+		resQuery.Value = resData
+
 	}
 
 	return

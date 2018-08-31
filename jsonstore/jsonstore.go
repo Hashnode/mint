@@ -135,7 +135,7 @@ func (app *JSONStoreApplication) InitChain(params types.RequestInitChain) types.
 	for _, v := range params.Validators {
 		db.C("validators").Upsert(
 			bson.M{"pubKey": v.PubKey},
-			bson.M{"$set": bson.M{"power": v.Power, "pubKey": v.PubKey}},
+			bson.M{"$set": bson.M{"power": v.Power, "pubKey": v.PubKey, "vid": hex.EncodeToString(v.GetPubKey())}},
 		)
 	}
 	return types.ResponseInitChain{}
@@ -413,8 +413,7 @@ func (app *JSONStoreApplication) DeliverTx(tx []byte) types.ResponseDeliverTx {
 		break
 	case "upvoteValidator":
 		entity := body["entity"].(map[string]interface{})
-		validatorID := bson.ObjectIdHex(entity["validatorID"].(string))
-		db.C("validators").Update(bson.M{"_id": validatorID}, bson.M{"$inc": bson.M{"power": 1}})
+		db.C("validators").Update(bson.M{"vid": entity["vid"]}, bson.M{"$inc": bson.M{"power": 1}})
 		break
 	}
 	log.Println(body["type"])
@@ -528,7 +527,7 @@ func (app *JSONStoreApplication) CheckTx(tx []byte) types.ResponseCheckTx {
 		}
 	case "upvoteValidator":
 		entity := body["entity"].(map[string]interface{})
-		if (entity["validatorID"] == nil) || (bson.IsObjectIdHex(entity["validatorID"].(string)) != true) {
+		if entity["vid"] == nil {
 			codeType = code.CodeTypeBadData
 			break
 		}

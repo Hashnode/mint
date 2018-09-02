@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -24,108 +23,6 @@ import (
 
 var _ types.Application = (*JSONStoreApplication)(nil)
 var db *mgo.Database
-
-// Post ...
-type Post struct {
-	ID          bson.ObjectId `bson:"_id" json:"_id"`
-	Title       string        `bson:"title" json:"title"`
-	URL         string        `bson:"url" json:"url"`
-	Text        string        `bson:"text" json:"text"`
-	Author      bson.ObjectId `bson:"author" json:"author"`
-	Upvotes     int           `bson:"upvotes" json:"upvotes"`
-	Date        time.Time     `bson:"date" json:"date"`
-	Score       float64       `bson:"score" json:"score"`
-	NumComments int           `bson:"numComments" json:"numComments"`
-	AskUH       bool          `bson:"askUH" json:"askUH"`
-	ShowUH      bool          `bson:"showUH" json:"showUH"`
-	Spam        bool          `bson:"spam" json:"spam"`
-}
-
-// Comment ...
-type Comment struct {
-	ID              bson.ObjectId `bson:"_id" json:"_id"`
-	Content         string        `bson:"content" json:"content"`
-	Author          bson.ObjectId `bson:"author" json:"author"`
-	Upvotes         int           `bson:"upvotes" json:"upvotes"`
-	Score           float64       `bson:"score" json:"score"`
-	Date            time.Time
-	PostID          bson.ObjectId `bson:"postID" json:"postID"`
-	ParentCommentID bson.ObjectId `bson:"parentCommentId,omitempty" json:"parentCommentId"`
-}
-
-// User ...
-type User struct {
-	ID        bson.ObjectId `bson:"_id" json:"_id"`
-	Name      string        `bson:"name" json:"name"`
-	Username  string        `bson:"username" json:"username"`
-	PublicKey string        `bson:"publicKey" json:"publicKey"`
-}
-
-// UserPostVote ...
-type UserPostVote struct {
-	ID     bson.ObjectId `bson:"_id" json:"_id"`
-	UserID bson.ObjectId `bson:"userID" json:"userID"`
-	PostID bson.ObjectId `bson:"postID" json:"postID"`
-}
-
-// UserCommentVote ...
-type UserCommentVote struct {
-	ID        bson.ObjectId `bson:"_id" json:"_id"`
-	UserID    bson.ObjectId `bson:"userID" json:"userID"`
-	CommentID bson.ObjectId `bson:"commentID" json:"commentID"`
-}
-
-// JSONStoreApplication ...
-type JSONStoreApplication struct {
-	types.BaseApplication
-}
-
-func byteToHex(input []byte) string {
-	var hexValue string
-	for _, v := range input {
-		hexValue += fmt.Sprintf("%02x", v)
-	}
-	return hexValue
-}
-
-func getPosts(db *mgo.Database, sortBy string, searchConfig map[string]interface{}) ([]interface{}, error) {
-	var posts []interface{}
-	var user User
-
-	err := db.C("posts").Find(searchConfig).Sort("-" + sortBy).All(&posts)
-	if err != nil {
-		panic(err)
-	}
-
-	for i := range posts {
-		err = db.C("users").Find(bson.M{"_id": posts[i].(bson.M)["author"].(bson.ObjectId)}).One(&user)
-		if err != nil {
-			panic(err)
-		}
-
-		posts[i].(bson.M)["author"] = user
-	}
-
-	return posts, nil
-}
-
-func findTotalDocuments(db *mgo.Database) int64 {
-	collections := [5]string{"posts", "comments", "users", "userpostvotes", "usercommentvotes"}
-	var sum int64
-
-	for _, collection := range collections {
-		count, _ := db.C(collection).Find(nil).Count()
-		sum += int64(count)
-	}
-
-	return sum
-}
-
-func hotScore(votes int, date time.Time) float64 {
-	gravity := 1.8
-	hoursAge := float64(date.Unix() * 3600)
-	return float64(votes-1) / math.Pow(hoursAge+2, gravity)
-}
 
 // FindTimeFromObjectID ... Convert ObjectID string to Time
 func FindTimeFromObjectID(id string) time.Time {
@@ -559,14 +456,16 @@ func (app *JSONStoreApplication) Query(reqQuery types.RequestQuery) (resQuery ty
 	case "/fetch-user":
 		err := db.C("users").Find(bson.M{"publicKey": t["publicKey"].(string)}).One(&user)
 		if err != nil {
-			resQuery.Log = err.Error()
-			break
+			panic(err)
+			// resQuery.Log = err.Error()
+			// break
 		}
 
 		resData, err := json.Marshal(user)
 		if err != nil {
-			resQuery.Log = err.Error()
-			break
+			panic(err)
+			// resQuery.Log = err.Error()
+			// break
 		}
 		resQuery.Value = resData
 	case "/get-posts":
@@ -595,8 +494,9 @@ func (app *JSONStoreApplication) Query(reqQuery types.RequestQuery) (resQuery ty
 
 		resData, err := json.Marshal(posts)
 		if err != nil {
-			resQuery.Log = err.Error()
-			break
+			panic(err)
+			// resQuery.Log = err.Error()
+			// break
 		}
 		resQuery.Value = resData
 	case "/get-upvote-status":
@@ -648,8 +548,9 @@ func (app *JSONStoreApplication) Query(reqQuery types.RequestQuery) (resQuery ty
 
 		resData, err := json.Marshal(comment)
 		if err != nil {
-			resQuery.Log = err.Error()
-			break
+			panic(err)
+			// resQuery.Log = err.Error()
+			// break
 		}
 		resQuery.Value = resData
 	case "/get-comment-upvote-status":
@@ -681,8 +582,9 @@ func (app *JSONStoreApplication) Query(reqQuery types.RequestQuery) (resQuery ty
 		wg.Wait()
 		resData, err := json.Marshal(status)
 		if err != nil {
-			resQuery.Log = err.Error()
-			break
+			panic(err)
+			// resQuery.Log = err.Error()
+			// break
 		}
 		resQuery.Value = resData
 	case "/post":
@@ -729,8 +631,9 @@ func (app *JSONStoreApplication) Query(reqQuery types.RequestQuery) (resQuery ty
 		wg.Wait()
 		resData, err := json.Marshal(post)
 		if err != nil {
-			resQuery.Log = err.Error()
-			break
+			panic(err)
+			// resQuery.Log = err.Error()
+			// break
 		}
 		resQuery.Value = resData
 

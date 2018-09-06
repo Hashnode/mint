@@ -6,14 +6,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math"
 	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
-	"time"
+	"sync"
 
-	"mint/code"
+	"github.com/Hashnode/mint/code"
 
 	"github.com/tendermint/abci/types"
 	"golang.org/x/crypto/ed25519"
@@ -23,93 +21,6 @@ import (
 
 var _ types.Application = (*JSONStoreApplication)(nil)
 var db *mgo.Database
-
-// Post ...
-type Post struct {
-	ID          bson.ObjectId `bson:"_id" json:"_id"`
-	Title       string        `bson:"title" json:"title"`
-	URL         string        `bson:"url" json:"url"`
-	Text        string        `bson:"text" json:"text"`
-	Author      bson.ObjectId `bson:"author" json:"author"`
-	Upvotes     int           `bson:"upvotes" json:"upvotes"`
-	Date        time.Time     `bson:"date" json:"date"`
-	Score       float64       `bson:"score" json:"score"`
-	NumComments int           `bson:"numComments" json:"numComments"`
-	AskUH       bool          `bson:"askUH" json:"askUH"`
-	ShowUH      bool          `bson:"showUH" json:"showUH"`
-	Spam        bool          `bson:"spam" json:"spam"`
-}
-
-// Comment ...
-type Comment struct {
-	ID              bson.ObjectId `bson:"_id" json:"_id"`
-	Content         string        `bson:"content" json:"content"`
-	Author          bson.ObjectId `bson:"author" json:"author"`
-	Upvotes         int           `bson:"upvotes" json:"upvotes"`
-	Score           float64       `bson:"score" json:"score"`
-	Date            time.Time
-	PostID          bson.ObjectId `bson:"postID" json:"postID"`
-	ParentCommentID bson.ObjectId `bson:"parentCommentId,omitempty" json:"parentCommentId"`
-}
-
-// User ...
-type User struct {
-	ID        bson.ObjectId `bson:"_id" json:"_id"`
-	Name      string        `bson:"name" json:"name"`
-	Username  string        `bson:"username" json:"username"`
-	PublicKey string        `bson:"publicKey" json:"publicKey"`
-}
-
-// UserPostVote ...
-type UserPostVote struct {
-	ID     bson.ObjectId `bson:"_id" json:"_id"`
-	UserID bson.ObjectId `bson:"userID" json:"userID"`
-	PostID bson.ObjectId `bson:"postID" json:"postID"`
-}
-
-// UserCommentVote ...
-type UserCommentVote struct {
-	ID        bson.ObjectId `bson:"_id" json:"_id"`
-	UserID    bson.ObjectId `bson:"userID" json:"userID"`
-	CommentID bson.ObjectId `bson:"commentID" json:"commentID"`
-}
-
-// JSONStoreApplication ...
-type JSONStoreApplication struct {
-	types.BaseApplication
-}
-
-func byteToHex(input []byte) string {
-	var hexValue string
-	for _, v := range input {
-		hexValue += fmt.Sprintf("%02x", v)
-	}
-	return hexValue
-}
-
-func findTotalDocuments(db *mgo.Database) int64 {
-	collections := [5]string{"posts", "comments", "users", "userpostvotes", "usercommentvotes"}
-	var sum int64
-
-	for _, collection := range collections {
-		count, _ := db.C(collection).Find(nil).Count()
-		sum += int64(count)
-	}
-
-	return sum
-}
-
-func hotScore(votes int, date time.Time) float64 {
-	gravity := 1.8
-	hoursAge := float64(date.Unix() * 3600)
-	return float64(votes-1) / math.Pow(hoursAge+2, gravity)
-}
-
-// FindTimeFromObjectID ... Convert ObjectID string to Time
-func FindTimeFromObjectID(id string) time.Time {
-	ts, _ := strconv.ParseInt(id[0:8], 16, 64)
-	return time.Unix(ts, 0)
-}
 
 // NewJSONStoreApplication ...
 func NewJSONStoreApplication(dbCopy *mgo.Database) *JSONStoreApplication {
@@ -522,5 +433,203 @@ func (app *JSONStoreApplication) Commit() types.ResponseCommit {
 
 // Query ... Query the blockchain. Unimplemented as of now.
 func (app *JSONStoreApplication) Query(reqQuery types.RequestQuery) (resQuery types.ResponseQuery) {
+	var temp interface{}
+	var user User
+	var t map[string]interface{}
+
+	err := json.Unmarshal(reqQuery.Data, &temp)
+	if err != nil {
+		panic(err)
+	}
+
+	t = temp.(map[string]interface{})
+
+	switch reqQuery.Path {
+	case "/fetch-user":
+		err := db.C("users").Find(bson.M{"publicKey": t["publicKey"].(string)}).One(&user)
+		if err != nil {
+			panic(err)
+			// resQuery.Log = err.Error()
+			// break
+		}
+
+		resData, err := json.Marshal(user)
+		if err != nil {
+			panic(err)
+			// resQuery.Log = err.Error()
+			// break
+		}
+		resQuery.Value = resData
+	case "/get-posts":
+
+		searchConfig := make(map[string]interface{})
+
+		searchConfig["spam"] = false
+		if val, ok := t["type"]; ok {
+			if val.(string) == "askUH" || val.(string) == "showUH" {
+				searchConfig[val.(string)] = true
+			} else {
+				resQuery.Log = "type field can only have values 'showUH' or 'askUH'"
+				break
+			}
+		}
+
+		if t["sortBy"].(string) != "score" && t["sortBy"].(string) != "date" {
+			resQuery.Log = "sortBy field can only have values 'score' or 'date'"
+			break
+		}
+
+		posts, err := getPosts(db, t["sortBy"].(string), searchConfig)
+		if err != nil {
+			panic(err)
+		}
+
+		resData, err := json.Marshal(posts)
+		if err != nil {
+			panic(err)
+			// resQuery.Log = err.Error()
+			// break
+		}
+		resQuery.Value = resData
+	case "/get-upvote-status":
+		var wg sync.WaitGroup
+		var status map[string]interface{}
+
+		status = make(map[string]interface{})
+
+		err := db.C("users").Find(bson.M{"publicKey": t["publicKey"].(string)}).One(&user)
+		if err != nil {
+			panic(err)
+		}
+
+		for _, postID := range t["postIds"].([]interface{}) {
+			wg.Add(1)
+			go func(postID string) {
+				defer wg.Done()
+				count, err := db.C("userpostvotes").Find(bson.M{"postID": bson.ObjectIdHex(postID), "userID": user.ID}).Count()
+				if err != nil {
+					panic(err)
+				}
+
+				if count > 0 {
+					status[postID] = true
+				}
+			}(postID.(string))
+		}
+
+		wg.Wait()
+		resData, err := json.Marshal(status)
+		if err != nil {
+			resQuery.Log = err.Error()
+			break
+		}
+		resQuery.Value = resData
+	case "/comment":
+		var comment map[string]interface{}
+		err := db.C("comments").Find(bson.M{"_id": bson.ObjectIdHex(t["id"].(string))}).One(&comment)
+		if err != nil {
+			panic(err)
+		}
+
+		err = db.C("users").Find(bson.M{"_id": comment["author"].(bson.ObjectId)}).One(&user)
+		if err != nil {
+			panic(err)
+		}
+
+		comment["author"] = user
+
+		resData, err := json.Marshal(comment)
+		if err != nil {
+			panic(err)
+			// resQuery.Log = err.Error()
+			// break
+		}
+		resQuery.Value = resData
+	case "/get-comment-upvote-status":
+		var wg sync.WaitGroup
+		var status map[string]interface{}
+
+		status = make(map[string]interface{})
+
+		err := db.C("users").Find(bson.M{"publicKey": t["publicKey"].(string)}).One(&user)
+		if err != nil {
+			panic(err)
+		}
+
+		for _, commentID := range t["commentIds"].([]interface{}) {
+			wg.Add(1)
+			go func(commentID string) {
+				defer wg.Done()
+				count, err := db.C("usercommentvotes").Find(bson.M{"commentID": bson.ObjectIdHex(commentID), "userID": user.ID}).Count()
+				if err != nil {
+					panic(err)
+				}
+
+				if count > 0 {
+					status[commentID] = true
+				}
+			}(commentID.(string))
+		}
+
+		wg.Wait()
+		resData, err := json.Marshal(status)
+		if err != nil {
+			panic(err)
+			// resQuery.Log = err.Error()
+			// break
+		}
+		resQuery.Value = resData
+	case "/post":
+		var wg sync.WaitGroup
+		var post map[string]interface{}
+		var user User
+		var comments []map[string]interface{}
+
+		post = make(map[string]interface{})
+
+		err := db.C("posts").Find(bson.M{"_id": bson.ObjectIdHex(t["id"].(string))}).One(&post)
+		if err != nil {
+			panic(err)
+		}
+
+		err = db.C("users").Find(bson.M{"_id": post["author"].(bson.ObjectId)}).One(&user)
+		if err != nil {
+			panic(err)
+		}
+
+		post["author"] = user
+
+		err = db.C("comments").Find(bson.M{"postID": bson.ObjectIdHex(t["id"].(string))}).All(&comments)
+		if err != nil {
+			panic(err)
+		}
+
+		for i := range comments {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				var user User
+				err = db.C("users").Find(bson.M{"_id": comments[i]["author"].(bson.ObjectId)}).One(&user)
+				if err != nil {
+					panic(err)
+				}
+
+				comments[i]["author"] = user
+			}(i)
+		}
+
+		post["comments"] = comments
+
+		wg.Wait()
+		resData, err := json.Marshal(post)
+		if err != nil {
+			panic(err)
+			// resQuery.Log = err.Error()
+			// break
+		}
+		resQuery.Value = resData
+
+	}
+
 	return
 }

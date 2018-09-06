@@ -3,6 +3,7 @@ package jsonstore
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"time"
 
 	mgo "gopkg.in/mgo.v2"
@@ -54,4 +55,10 @@ func hotScore(votes int, date time.Time) float64 {
 	gravity := 1.8
 	hoursAge := float64(date.Unix() * 3600)
 	return float64(votes-1) / math.Pow(hoursAge+2, gravity)
+}
+
+// FindTimeFromObjectID ... Convert ObjectID string to Time
+func FindTimeFromObjectID(id string) time.Time {
+	ts, _ := strconv.ParseInt(id[0:8], 16, 64)
+	return time.Unix(ts, 0)
 }

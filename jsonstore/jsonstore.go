@@ -8,10 +8,8 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/Hashnode/mint/code"
 
@@ -23,12 +21,6 @@ import (
 
 var _ types.Application = (*JSONStoreApplication)(nil)
 var db *mgo.Database
-
-// FindTimeFromObjectID ... Convert ObjectID string to Time
-func FindTimeFromObjectID(id string) time.Time {
-	ts, _ := strconv.ParseInt(id[0:8], 16, 64)
-	return time.Unix(ts, 0)
-}
 
 // NewJSONStoreApplication ...
 func NewJSONStoreApplication(dbCopy *mgo.Database) *JSONStoreApplication {
